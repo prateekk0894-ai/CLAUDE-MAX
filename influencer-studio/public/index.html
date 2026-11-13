@@ -46,6 +46,9 @@
   .photo .caption { white-space: pre-wrap; margin: 8px 0 4px; }
   .photo .tags { color: var(--accent); overflow-wrap: anywhere; }
   .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+  .prompt { display: none; margin-top: 10px; padding: 10px; border: 1px dashed var(--line); border-radius: 8px; font-size: 13px; white-space: pre-wrap; user-select: all; }
+  ol.steps { margin: 0 0 4px; padding-left: 20px; font-size: 13px; color: var(--muted); }
+  [hidden] { display: none !important; }
 </style>
 </head>
 <body>
@@ -88,10 +91,19 @@
       <div class="row" style="align-items: flex-start">
         <div style="flex: 0 0 180px"><img id="ref" alt="Reference portrait"></div>
         <div>
-          <p class="note" style="margin-top: 0">Every photo is anchored to this portrait, so the face stays the same. Regenerate until you like it, then leave it alone. Changing it later changes the face in new photos only.</p>
-          <div class="actions"><button id="makeRef" class="primary">Generate face</button></div>
+          <p class="note" style="margin-top: 0">Every photo is anchored to this portrait, so the face stays the same. Pick one you like, then leave it alone.</p>
+          <ol class="steps" data-manual>
+            <li>Copy the face prompt and paste it into Gemini (or any free image app).</li>
+            <li>Save the portrait you like and upload it here.</li>
+          </ol>
+          <div class="actions">
+            <button id="copyRef" data-manual>Copy face prompt</button>
+            <button id="uploadRef" class="primary" data-manual>Upload face</button>
+            <button id="makeRef" class="primary" data-auto>Generate face</button>
+          </div>
         </div>
       </div>
+      <div class="prompt" id="refPrompt"></div>
     </section>
 
     <section>
@@ -99,10 +111,19 @@
       <label for="scene">Scene</label>
       <textarea id="scene" placeholder="e.g. sipping filter coffee at a rooftop cafe in Bengaluru at sunset"></textarea>
       <div class="chips" id="ideas"></div>
+      <ol class="steps" data-manual style="margin-top: 12px">
+        <li>Write the scene and copy the prompt.</li>
+        <li>In Gemini, attach your reference face, paste the prompt, and save the result.</li>
+        <li>Upload the photo here (keep the scene text, it is used for the caption).</li>
+      </ol>
       <div class="actions">
         <select id="aspect" style="width: auto" aria-label="Aspect ratio"></select>
-        <button id="makePhoto" class="primary">Generate photo</button>
+        <button id="copyScene" data-manual>Copy prompt</button>
+        <button id="uploadPhoto" class="primary" data-manual>Upload photo</button>
+        <button id="makePhoto" class="primary" data-auto>Generate photo</button>
       </div>
+      <div class="prompt" id="scenePrompt"></div>
+      <input type="file" id="file" accept="image/jpeg,image/png,image/webp" hidden>
     </section>
 
     <section>
@@ -175,6 +196,9 @@ function render(next, { fillForm = false } = {}) {
   else $("ref").removeAttribute("src");
   $("makeRef").textContent = state.reference ? "Regenerate face" : "Generate face";
   $("makePhoto").disabled = !state.reference;
+  const manual = state.provider.name === "manual";
+  for (const node of document.querySelectorAll("[data-manual]")) node.hidden = !manual;
+  for (const node of document.querySelectorAll("[data-auto]")) node.hidden = manual;
 
   const gallery = $("gallery");
   gallery.replaceChildren();
@@ -234,6 +258,59 @@ $("makePhoto").onclick = () =>
     $("scene").value = "";
     return next;
   });
+
+// Manual mode: fetch the prompt, show it, and copy it to the clipboard.
+async function copyPrompt(body, box) {
+  const { prompt } = await api("POST", "/api/prompt", body);
+  box.textContent = prompt;
+  box.style.display = "block";
+  try {
+    await navigator.clipboard.writeText(prompt);
+  } catch {
+    throw new Error("Could not copy automatically. Select the prompt text below and copy it.");
+  }
+}
+
+// Opens the file picker and resolves with the chosen image as a data URL (or null if cancelled).
+function pickImage() {
+  return new Promise((resolve, reject) => {
+    const input = $("file");
+    input.value = "";
+    input.onchange = () => {
+      const file = input.files[0];
+      if (!file) return resolve(null);
+      const reader = new FileReader();
+      reader.onload = () => resolve(reader.result);
+      reader.onerror = () => reject(new Error("Could not read that file."));
+      reader.readAsDataURL(file);
+    };
+    input.oncancel = () => resolve(null);
+    input.click();
+  });
+}
+
+$("copyRef").onclick = () => run($("copyRef"), "Copied", () => copyPrompt({ kind: "reference" }, $("refPrompt")));
+
+$("copyScene").onclick = () =>
+  run($("copyScene"), "Copied", () =>
+    copyPrompt({ kind: "scene", scene: $("scene").value, aspect: $("aspect").value }, $("scenePrompt")));
+
+$("uploadRef").onclick = async () => {
+  const image = await pickImage().catch((error) => showError(error.message));
+  if (image) run($("uploadRef"), "Uploading…", () => api("POST", "/api/reference/upload", { image }));
+};
+
+$("uploadPhoto").onclick = async () => {
+  if (!$("scene").value.trim()) return showError("Write the scene first, so the photo can be captioned.");
+  const image = await pickImage().catch((error) => showError(error.message));
+  if (!image) return;
+  run($("uploadPhoto"), "Uploading…", async () => {
+    const next = await api("POST", "/api/photos/import", { scene: $("scene").value, aspect: $("aspect").value, image });
+    $("scene").value = "";
+    $("scenePrompt").style.display = "none";
+    return next;
+  });
+};
 
 for (const idea of IDEAS) {
   const chip = el("button", { className: "small", type: "button", textContent: idea });

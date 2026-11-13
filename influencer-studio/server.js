@@ -7,7 +7,16 @@ import { fileURLToPath } from "node:url";
 
 import { CaptionError, writeCaption } from "./lib/captions.js";
 import { ASPECTS, ProviderError, provider, providerStatus } from "./lib/images.js";
-import { DEFAULT_PERSONA, PersonaSchema, checkScene, referencePrompt, scenePrompt, standalonePrompt } from "./lib/persona.js";
+import {
+  DEFAULT_PERSONA,
+  PersonaSchema,
+  checkScene,
+  manualReferencePrompt,
+  manualScenePrompt,
+  referencePrompt,
+  scenePrompt,
+  standalonePrompt,
+} from "./lib/persona.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 if (existsSync(path.join(here, ".env"))) process.loadEnvFile(path.join(here, ".env"));
@@ -15,7 +24,13 @@ if (existsSync(path.join(here, ".env"))) process.loadEnvFile(path.join(here, ".e
 const DATA = process.env.STUDIO_DATA_DIR || path.join(here, "data");
 const IMAGES = path.join(DATA, "images");
 const PUBLIC = path.join(here, "public");
-const TYPES = { ".html": "text/html; charset=utf-8", ".jpg": "image/jpeg", ".svg": "image/svg+xml" };
+const TYPES = {
+  ".html": "text/html; charset=utf-8",
+  ".jpg": "image/jpeg",
+  ".png": "image/png",
+  ".webp": "image/webp",
+  ".svg": "image/svg+xml",
+};
 
 class HttpError extends Error {
   constructor(status, message) {
@@ -57,6 +72,44 @@ async function state() {
   };
 }
 
+// Uploaded images arrive as data URLs. The real type is read from the bytes, not the label.
+function decodeUpload(dataUrl) {
+  const match = /^data:image\/[a-z]+;base64,([A-Za-z0-9+/=]+)$/.exec(dataUrl || "");
+  if (!match) throw new HttpError(400, "Choose a JPG, PNG or WebP image.");
+  const bytes = Buffer.from(match[1], "base64");
+  const hex = bytes.subarray(0, 12).toString("hex");
+  const ext = hex.startsWith("ffd8ff")
+    ? "jpg"
+    : hex.startsWith("89504e47")
+      ? "png"
+      : hex.startsWith("52494646") && hex.endsWith("57454250")
+        ? "webp"
+        : null;
+  if (!ext) throw new HttpError(400, "Choose a JPG, PNG or WebP image.");
+  return { bytes, ext };
+}
+
+async function saveReference(image) {
+  const old = await referenceFile();
+  if (old) await rm(path.join(DATA, old));
+  await writeFile(path.join(DATA, `reference.${image.ext}`), image.bytes);
+}
+
+async function addToGallery(image, scene, aspect) {
+  const id = randomUUID();
+  const file = `${id}.${image.ext}`;
+  await writeFile(path.join(IMAGES, file), image.bytes);
+  const gallery = await loadGallery();
+  gallery.unshift({ id, file, scene, aspect, createdAt: new Date().toISOString() });
+  await writeJson(galleryFile, gallery);
+}
+
+function sceneOf(body) {
+  const check = checkScene(body.scene);
+  if (!check.ok) throw new HttpError(400, check.error);
+  return check.scene;
+}
+
 function aspectOf(body) {
   const aspect = body.aspect || "4:5";
   if (!ASPECTS.includes(aspect)) throw new HttpError(400, "Unsupported aspect ratio.");
@@ -78,16 +131,31 @@ const routes = {
     const persona = await loadPersona();
     const seed = Math.floor(Math.random() * 1_000_000);
     const image = await provider().reference(referencePrompt(persona), "1:1", seed);
-    const old = await referenceFile();
-    if (old) await rm(path.join(DATA, old));
-    await writeFile(path.join(DATA, `reference.${image.ext}`), image.bytes);
+    await saveReference(image);
     await writeJson(seedFile, { seed });
     return state();
   },
 
+  // Manual mode: the text to paste into a free image app.
+  "POST /api/prompt": async (body) => {
+    const persona = await loadPersona();
+    if (body.kind === "reference") return { prompt: manualReferencePrompt(persona) };
+    return { prompt: manualScenePrompt(persona, sceneOf(body), aspectOf(body)) };
+  },
+
+  "POST /api/reference/upload": async (body) => {
+    await saveReference(decodeUpload(body.image));
+    return state();
+  },
+
+  "POST /api/photos/import": async (body) => {
+    const scene = sceneOf(body);
+    await addToGallery(decodeUpload(body.image), scene, aspectOf(body));
+    return state();
+  },
+
   "POST /api/photos": async (body) => {
-    const check = checkScene(body.scene);
-    if (!check.ok) throw new HttpError(400, check.error);
+    const scene = sceneOf(body);
     const aspect = aspectOf(body);
     const ref = await referenceFile();
     if (!ref) throw new HttpError(409, "Generate the reference face first.");
@@ -96,15 +164,9 @@ const routes = {
     const refBytes = await readFile(path.join(DATA, ref));
     const { seed } = await readJson(seedFile, { seed: 42 });
     const source = provider();
-    const prompt = source.usesReference ? scenePrompt(persona, check.scene) : standalonePrompt(persona, check.scene);
-    const image = await source.scene(prompt, { bytes: refBytes }, aspect, seed);
-
-    const id = randomUUID();
-    const file = `${id}.${image.ext}`;
-    await writeFile(path.join(IMAGES, file), image.bytes);
-    const gallery = await loadGallery();
-    gallery.unshift({ id, file, scene: check.scene, aspect, createdAt: new Date().toISOString() });
-    await writeJson(galleryFile, gallery);
+    const prompt = source.usesReference ? scenePrompt(persona, scene) : standalonePrompt(persona, scene);
+    const mime = TYPES[path.extname(ref)];
+    await addToGallery(await source.scene(prompt, { bytes: refBytes, mime }, aspect, seed), scene, aspect);
     return state();
   },
 
@@ -132,7 +194,7 @@ async function readBody(req) {
   let size = 0;
   for await (const chunk of req) {
     size += chunk.length;
-    if (size > 64 * 1024) throw new HttpError(413, "Request too large.");
+    if (size > 20 * 1024 * 1024) throw new HttpError(413, "Image is too large (max about 15 MB).");
     chunks.push(chunk);
   }
   if (!chunks.length) return {};

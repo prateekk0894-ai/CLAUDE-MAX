@@ -13,14 +13,17 @@ const EDIT_MODEL = () => process.env.REPLICATE_EDIT_MODEL || "black-forest-labs/
 export const ASPECTS = ["4:5", "1:1", "9:16", "16:9"];
 
 export function providerName() {
-  return (process.env.IMAGE_PROVIDER || "pollinations").toLowerCase();
+  return (process.env.IMAGE_PROVIDER || "manual").toLowerCase();
 }
 
 export function providerStatus() {
   const name = providerName();
   if (name === "mock") return { name, ready: true, note: "Placeholder images only. Set IMAGE_PROVIDER=pollinations for free real photos." };
+  if (name === "manual") {
+    return { name, ready: true, note: "Manual mode: copy the prompt, make the photo in a free app such as Gemini, then upload it here." };
+  }
   if (name === "pollinations") {
-    return { name, ready: true, note: "Free mode (Pollinations): one image every 45 seconds, small watermark, and the face is similar between photos but not identical." };
+    return { name, ready: true, note: "Pollinations mode: free and automatic, but low quality. Photos do not look like a real person and the face changes between photos." };
   }
   if (name === "replicate") {
     const ready = Boolean(process.env.REPLICATE_API_TOKEN);
@@ -69,7 +72,7 @@ const replicate = {
   scene: (prompt, ref, aspect) =>
     replicateRun(EDIT_MODEL(), {
       prompt,
-      input_image: `data:image/jpeg;base64,${ref.bytes.toString("base64")}`,
+      input_image: `data:${ref.mime};base64,${ref.bytes.toString("base64")}`,
       aspect_ratio: aspect,
       output_format: "jpg",
     }),
@@ -135,5 +138,6 @@ const mock = {
 export function provider() {
   const status = providerStatus();
   if (!status.ready) throw new ProviderError(status.note);
+  if (status.name === "manual") throw new ProviderError("Manual mode has no automatic generation. Copy the prompt and upload the photo instead.");
   return { replicate, pollinations, mock }[status.name];
 }

@@ -16,15 +16,23 @@ npm start            # http://localhost:4321
 
 It works with **no API key and no cost** out of the box.
 
-## Free mode (default)
+## Free mode (default): make photos in Gemini, manage them here
 
-Photos and captions come from [Pollinations](https://pollinations.ai), which needs no account. Its limits:
+The free automatic image services do not produce real-looking people, so by default the studio
+writes the prompts and you make the photos in a free image app that does, such as the
+[Gemini app](https://gemini.google.com):
 
-- One image every 45 seconds and one caption every 30 seconds. The app waits and retries for you.
-- Images are at most 768x768 in area, lower quality than paid models, with a small `pollinations.ai` logo in the corner.
-- **The face is similar between photos, not identical.** The free model cannot look at the reference
-  portrait, so the app repeats the same written description and seed for every photo. Keep the
-  "Face" and "Hair" fields short and specific; that is what holds the look together.
+1. **Face**: click *Copy face prompt*, paste it into Gemini, save the portrait you like, *Upload face*.
+2. **Each photo**: write the scene, click *Copy prompt*. In Gemini, attach your reference face,
+   paste the prompt, save the result, then *Upload photo*.
+3. **Caption**: click *Write caption* on the photo.
+
+Attaching the same reference face every time is what keeps it the same person. Gemini has a daily
+free limit and marks its images as AI-generated. Captions come from
+[Pollinations](https://pollinations.ai) (free, no account, one every 30 seconds).
+
+`IMAGE_PROVIDER=pollinations` makes photos automatically for free, but the quality is low: they do
+not look like a real person, the face changes between photos, and it sometimes returns an unrelated image.
 
 ## Paid mode (optional, better)
 

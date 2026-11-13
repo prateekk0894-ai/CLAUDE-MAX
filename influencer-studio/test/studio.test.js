@@ -64,3 +64,20 @@ test("bad input is rejected", async () => {
   assert.equal((await call("POST", "/api/photos", { scene: "x", aspect: "7:3" })).status, 400);
   assert.equal((await fetch(`${base}/media/..%2F..%2Fpackage.json`)).status, 404);
 });
+
+test("manual mode: prompt to copy, then upload a face and a photo", async () => {
+  const prompt = await call("POST", "/api/prompt", { kind: "scene", scene: "reading in a park", aspect: "4:5" });
+  assert.match(prompt.body.prompt, /same person.*reading in a park.*4:5/s);
+  assert.equal((await call("POST", "/api/prompt", { kind: "scene", scene: "nude" })).status, 400);
+
+  const png = "data:image/png;base64," + Buffer.from("89504e470d0a1a0a0000000d49484452", "hex").toString("base64");
+  const ref = await call("POST", "/api/reference/upload", { image: png });
+  assert.match(ref.body.reference, /^\/media\/reference\.png/);
+
+  const made = await call("POST", "/api/photos/import", { scene: "reading in a park", image: png });
+  assert.match(made.body.gallery[0].file, /\.png$/);
+
+  // A file that only claims to be an image is refused.
+  const fake = "data:image/png;base64," + Buffer.from("<script>alert(1)</script>").toString("base64");
+  assert.equal((await call("POST", "/api/photos/import", { scene: "x", image: fake })).status, 400);
+});

@@ -71,6 +71,22 @@ export function scenePrompt(p, scene) {
   );
 }
 
+/** Prompts to paste into a free image app (e.g. Gemini) when making photos by hand. */
+const REAL = "It must look like a real, unedited phone photo: natural skin texture with pores, no smoothing, no illustration or CGI look.";
+
+export function manualReferencePrompt(p) {
+  return `${referencePrompt(p)} ${REAL} Square 1:1 image.`;
+}
+
+export function manualScenePrompt(p, scene, aspect) {
+  return (
+    "Use the attached photo as the reference. Keep the exact same person: identical face, hair and skin tone. " +
+    `New photo: ${scene}. ` +
+    (p.style ? `Outfit and styling: ${p.style}. ` : "") +
+    `Fully clothed, natural lighting. ${REAL} Aspect ratio ${aspect}.`
+  );
+}
+
 /**
  * Prompt for providers that cannot see the reference image: describe the person again.
  * Kept short and scene-first on purpose: the free Pollinations model returned an
