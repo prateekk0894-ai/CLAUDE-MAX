@@ -1,0 +1,252 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Influencer Studio</title>
+<style>
+  :root {
+    --bg: #f6f4f1; --card: #fff; --ink: #1d1b19; --muted: #6d675f; --line: #e3ded6;
+    --accent: #b4532a; --accent-ink: #fff; --danger: #a12d2d;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #171614; --card: #201e1b; --ink: #ece8e1; --muted: #a39c91; --line: #35322d; --accent: #e08a5f; --accent-ink: #1b1109; --danger: #e07a7a; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font: 15px/1.5 system-ui, sans-serif; }
+  header { padding: 20px 16px 4px; max-width: 1100px; margin: 0 auto; }
+  h1 { margin: 0; font-size: 22px; }
+  h2 { margin: 0 0 12px; font-size: 16px; }
+  .sub { color: var(--muted); margin: 2px 0 0; }
+  main { max-width: 1100px; margin: 0 auto; padding: 16px; display: grid; gap: 16px; grid-template-columns: minmax(0, 360px) minmax(0, 1fr); align-items: start; }
+  @media (max-width: 800px) { main { grid-template-columns: minmax(0, 1fr); } }
+  .col { display: grid; gap: 16px; }
+  section { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+  label { display: block; font-size: 12px; color: var(--muted); margin: 10px 0 3px; }
+  input, textarea, select { width: 100%; padding: 8px 10px; border: 1px solid var(--line); border-radius: 8px; background: var(--bg); color: var(--ink); font: inherit; }
+  textarea { resize: vertical; min-height: 58px; }
+  .row { display: flex; gap: 8px; }
+  .row > * { flex: 1; min-width: 0; }
+  button { font: inherit; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--card); color: var(--ink); cursor: pointer; }
+  button.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); font-weight: 600; }
+  button.small { padding: 4px 10px; font-size: 13px; }
+  button.danger { color: var(--danger); }
+  button:disabled { opacity: .55; cursor: progress; }
+  .actions { margin-top: 12px; display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+  .note { font-size: 13px; color: var(--muted); }
+  .banner { padding: 10px 12px; border-radius: 8px; border: 1px solid var(--line); font-size: 13px; margin-bottom: 12px; }
+  #error { display: none; border-color: var(--danger); color: var(--danger); }
+  #ref { width: 100%; aspect-ratio: 1; border-radius: 10px; object-fit: cover; background: var(--bg); border: 1px dashed var(--line); display: block; }
+  .chips { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 8px; }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
+  .photo { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--bg); }
+  .photo img { width: 100%; display: block; aspect-ratio: 4 / 5; object-fit: cover; }
+  .photo .body { padding: 10px; font-size: 13px; }
+  .photo .scene { color: var(--muted); }
+  .photo .caption { white-space: pre-wrap; margin: 8px 0 4px; }
+  .photo .tags { color: var(--accent); overflow-wrap: anywhere; }
+  .empty { color: var(--muted); padding: 24px 0; text-align: center; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Influencer Studio</h1>
+  <p class="sub">One fictional AI persona, the same face in every photo.</p>
+</header>
+<main>
+  <div class="col">
+    <section>
+      <h2>1. Persona</h2>
+      <form id="persona">
+        <div class="row">
+          <div><label for="name">Name</label><input id="name" name="name" required></div>
+          <div><label for="handle">Handle</label><input id="handle" name="handle"></div>
+        </div>
+        <div class="row">
+          <div><label for="age">Age (21+)</label><input id="age" name="age" type="number" min="21" max="80" required></div>
+          <div><label for="gender">Gender</label><input id="gender" name="gender" required></div>
+          <div><label for="origin">Origin</label><input id="origin" name="origin"></div>
+        </div>
+        <label for="face">Face</label><textarea id="face" name="face" required></textarea>
+        <label for="hair">Hair</label><input id="hair" name="hair" required>
+        <label for="build">Build</label><input id="build" name="build">
+        <label for="style">Style / outfits</label><textarea id="style" name="style"></textarea>
+        <label for="niche">Niche</label><input id="niche" name="niche">
+        <label for="personality">Personality (for captions)</label><textarea id="personality" name="personality"></textarea>
+        <label for="captionLanguage">Caption language</label><input id="captionLanguage" name="captionLanguage">
+        <div class="actions"><button class="primary">Save persona</button><span class="note" id="saved"></span></div>
+      </form>
+    </section>
+  </div>
+
+  <div class="col">
+    <div class="banner" id="error" role="alert"></div>
+    <div class="banner note" id="provider" hidden></div>
+
+    <section>
+      <h2>2. Reference face</h2>
+      <div class="row" style="align-items: flex-start">
+        <div style="flex: 0 0 180px"><img id="ref" alt="Reference portrait"></div>
+        <div>
+          <p class="note" style="margin-top: 0">Every photo is anchored to this portrait, so the face stays the same. Regenerate until you like it, then leave it alone. Changing it later changes the face in new photos only.</p>
+          <div class="actions"><button id="makeRef" class="primary">Generate face</button></div>
+        </div>
+      </div>
+    </section>
+
+    <section>
+      <h2>3. New photo</h2>
+      <label for="scene">Scene</label>
+      <textarea id="scene" placeholder="e.g. sipping filter coffee at a rooftop cafe in Bengaluru at sunset"></textarea>
+      <div class="chips" id="ideas"></div>
+      <div class="actions">
+        <select id="aspect" style="width: auto" aria-label="Aspect ratio"></select>
+        <button id="makePhoto" class="primary">Generate photo</button>
+      </div>
+    </section>
+
+    <section>
+      <h2>Gallery</h2>
+      <div class="grid" id="gallery"></div>
+    </section>
+  </div>
+</main>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const IDEAS = [
+  "morning chai on a balcony with plants, soft sunlight",
+  "mirror selfie in a new outfit before going out",
+  "walking through a colourful street market",
+  "working on a laptop in a cosy cafe",
+  "golden hour portrait on a beach",
+  "gym selfie after a workout, in activewear",
+];
+let state;
+
+function showError(message) {
+  $("error").textContent = message || "";
+  $("error").style.display = message ? "block" : "none";
+}
+
+async function api(method, path, body) {
+  const res = await fetch(path, {
+    method,
+    headers: body ? { "Content-Type": "application/json" } : {},
+    body: body ? JSON.stringify(body) : undefined,
+  });
+  const data = await res.json();
+  if (!res.ok) throw new Error(data.error || "Request failed");
+  return data;
+}
+
+// Runs an action with the button disabled and a busy label; errors go to the banner.
+async function run(button, busyLabel, action) {
+  const label = button.textContent;
+  button.disabled = true;
+  button.textContent = busyLabel;
+  showError("");
+  let next;
+  try {
+    next = await action();
+  } catch (error) {
+    showError(error.message);
+  }
+  // Restore the button first: render() may give it a new label or disabled state.
+  button.disabled = false;
+  button.textContent = label;
+  if (next) render(next);
+}
+
+function el(tag, props = {}, ...children) {
+  const node = Object.assign(document.createElement(tag), props);
+  node.append(...children);
+  return node;
+}
+
+function render(next, { fillForm = false } = {}) {
+  state = next;
+  if (fillForm) for (const [key, value] of Object.entries(state.persona)) if ($(key)) $(key).value = value;
+
+  $("provider").hidden = !state.provider.note;
+  $("provider").textContent = state.provider.note;
+
+  if (state.reference) $("ref").src = state.reference;
+  else $("ref").removeAttribute("src");
+  $("makeRef").textContent = state.reference ? "Regenerate face" : "Generate face";
+  $("makePhoto").disabled = !state.reference;
+
+  const gallery = $("gallery");
+  gallery.replaceChildren();
+  if (!state.gallery.length) gallery.append(el("p", { className: "empty", textContent: "No photos yet." }));
+  for (const item of state.gallery) {
+    const src = `/media/${item.file}`;
+    const body = el("div", { className: "body" }, el("div", { className: "scene", textContent: item.scene }));
+    if (item.caption) {
+      body.append(
+        el("div", { className: "caption", textContent: item.caption }),
+        el("div", { className: "tags", textContent: item.hashtags.join(" ") }),
+      );
+    }
+    const captionBtn = el("button", { className: "small", textContent: item.caption ? "Rewrite caption" : "Write caption" });
+    captionBtn.onclick = () => run(captionBtn, "Writing…", () => api("POST", "/api/caption", { id: item.id }));
+    const actions = el("div", { className: "actions" }, captionBtn);
+    if (item.caption) {
+      const copyBtn = el("button", { className: "small", textContent: "Copy" });
+      copyBtn.onclick = async () => {
+        await navigator.clipboard.writeText(`${item.caption}\n\n${item.hashtags.join(" ")}`);
+        copyBtn.textContent = "Copied";
+      };
+      actions.append(copyBtn);
+    }
+    const saveLink = el("a", { href: src, download: item.file }, el("button", { className: "small", textContent: "Download" }));
+    const delBtn = el("button", { className: "small danger", textContent: "Delete" });
+    delBtn.onclick = () => {
+      if (confirm("Delete this photo?")) run(delBtn, "Deleting…", () => api("DELETE", "/api/photos", { id: item.id }));
+    };
+    actions.append(saveLink, delBtn);
+    body.append(actions);
+    gallery.append(el("div", { className: "photo" }, el("img", { src, alt: item.altText || item.scene, loading: "lazy" }), body));
+  }
+}
+
+$("persona").onsubmit = (event) => {
+  event.preventDefault();
+  const persona = Object.fromEntries(new FormData(event.target));
+  persona.age = Number(persona.age);
+  const button = event.target.querySelector("button");
+  run(button, "Saving…", async () => {
+    const next = await api("PUT", "/api/persona", persona);
+    $("saved").textContent = "Saved";
+    setTimeout(() => ($("saved").textContent = ""), 2000);
+    return next;
+  });
+};
+
+$("makeRef").onclick = () => {
+  if (state.reference && !confirm("Replace the reference face? New photos will use the new face.")) return;
+  run($("makeRef"), "Generating…", () => api("POST", "/api/reference"));
+};
+
+$("makePhoto").onclick = () =>
+  run($("makePhoto"), "Generating… (up to a minute)", async () => {
+    const next = await api("POST", "/api/photos", { scene: $("scene").value, aspect: $("aspect").value });
+    $("scene").value = "";
+    return next;
+  });
+
+for (const idea of IDEAS) {
+  const chip = el("button", { className: "small", type: "button", textContent: idea });
+  chip.onclick = () => ($("scene").value = idea);
+  $("ideas").append(chip);
+}
+
+api("GET", "/api/state")
+  .then((next) => {
+    for (const aspect of next.aspects) $("aspect").append(el("option", { value: aspect, textContent: aspect }));
+    render(next, { fillForm: true });
+  })
+  .catch((error) => showError(error.message));
+</script>
+</body>
+</html>

@@ -1,0 +1,16 @@
+{
+  "name": "influencer-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Personal studio for one fictional AI influencer: consistent photos + captions",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node --test"
+  },
+  "engines": { "node": ">=22" },
+  "dependencies": {
+    "@anthropic-ai/sdk": "^1.8.0",
+    "zod": "^4.0.0"
+  }
+}
