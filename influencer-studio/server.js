@@ -7,7 +7,7 @@ import { fileURLToPath } from "node:url";
 
 import { CaptionError, writeCaption } from "./lib/captions.js";
 import { ASPECTS, ProviderError, provider, providerStatus } from "./lib/images.js";
-import { DEFAULT_PERSONA, PersonaSchema, checkScene, referencePrompt, scenePrompt } from "./lib/persona.js";
+import { DEFAULT_PERSONA, PersonaSchema, checkScene, referencePrompt, scenePrompt, standalonePrompt } from "./lib/persona.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 if (existsSync(path.join(here, ".env"))) process.loadEnvFile(path.join(here, ".env"));
@@ -38,6 +38,8 @@ const personaFile = path.join(DATA, "persona.json");
 const galleryFile = path.join(DATA, "gallery.json");
 const loadPersona = () => readJson(personaFile, DEFAULT_PERSONA);
 const loadGallery = () => readJson(galleryFile, []);
+// One seed per reference face; reusing it keeps seed-based providers as close to the same person as they can get.
+const seedFile = path.join(DATA, "seed.json");
 
 async function referenceFile() {
   const names = await readdir(DATA);
@@ -74,10 +76,12 @@ const routes = {
   // (Re)generate the reference face. Existing photos keep their old face.
   "POST /api/reference": async () => {
     const persona = await loadPersona();
-    const image = await provider().reference(referencePrompt(persona), "1:1");
+    const seed = Math.floor(Math.random() * 1_000_000);
+    const image = await provider().reference(referencePrompt(persona), "1:1", seed);
     const old = await referenceFile();
     if (old) await rm(path.join(DATA, old));
     await writeFile(path.join(DATA, `reference.${image.ext}`), image.bytes);
+    await writeJson(seedFile, { seed });
     return state();
   },
 
@@ -90,7 +94,10 @@ const routes = {
 
     const persona = await loadPersona();
     const refBytes = await readFile(path.join(DATA, ref));
-    const image = await provider().scene(scenePrompt(persona, check.scene), { bytes: refBytes }, aspect);
+    const { seed } = await readJson(seedFile, { seed: 42 });
+    const source = provider();
+    const prompt = source.usesReference ? scenePrompt(persona, check.scene) : standalonePrompt(persona, check.scene);
+    const image = await source.scene(prompt, { bytes: refBytes }, aspect, seed);
 
     const id = randomUUID();
     const file = `${id}.${image.ext}`;

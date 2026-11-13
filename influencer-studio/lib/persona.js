@@ -70,3 +70,20 @@ export function scenePrompt(p, scene) {
     "Photorealistic, natural lighting, candid social-media photo. Fully clothed, tasteful, safe for work."
   );
 }
+
+/**
+ * Prompt for providers that cannot see the reference image: describe the person again.
+ * Kept short and scene-first on purpose: the free Pollinations model returned an
+ * unrelated image when given the longer wording used for the other providers.
+ */
+export function standalonePrompt(p, scene) {
+  const who = [p.origin, p.gender].filter(Boolean).join(" ");
+  return [
+    `Photo of a ${p.age}-year-old ${who}, ${scene}`,
+    [p.face, p.hair].filter(Boolean).join(", "),
+    p.style,
+    "Photorealistic, sharp face.",
+  ]
+    .filter(Boolean)
+    .join(". ");
+}

@@ -1,7 +1,10 @@
 // Image providers. Each returns { bytes: Buffer, ext: "jpg" | "svg" }.
 //
-//   reference(prompt, aspect)            -> first portrait, text-to-image
-//   scene(prompt, referenceImage, aspect) -> new photo of the same person
+//   reference(prompt, aspect, seed)             -> first portrait, text-to-image
+//   scene(prompt, referenceImage, aspect, seed) -> new photo of the same person
+//
+// usesReference says whether scene() can actually look at the reference image.
+// Providers that cannot get the full written description of the person instead.
 
 const REPLICATE = "https://api.replicate.com/v1";
 const BASE_MODEL = () => process.env.REPLICATE_BASE_MODEL || "black-forest-labs/flux-1.1-pro";
@@ -10,12 +13,15 @@ const EDIT_MODEL = () => process.env.REPLICATE_EDIT_MODEL || "black-forest-labs/
 export const ASPECTS = ["4:5", "1:1", "9:16", "16:9"];
 
 export function providerName() {
-  return (process.env.IMAGE_PROVIDER || "mock").toLowerCase();
+  return (process.env.IMAGE_PROVIDER || "pollinations").toLowerCase();
 }
 
 export function providerStatus() {
   const name = providerName();
-  if (name === "mock") return { name, ready: true, note: "Placeholder images only. Set IMAGE_PROVIDER=replicate for real photos." };
+  if (name === "mock") return { name, ready: true, note: "Placeholder images only. Set IMAGE_PROVIDER=pollinations for free real photos." };
+  if (name === "pollinations") {
+    return { name, ready: true, note: "Free mode (Pollinations): one image every 45 seconds, small watermark, and the face is similar between photos but not identical." };
+  }
   if (name === "replicate") {
     const ready = Boolean(process.env.REPLICATE_API_TOKEN);
     return { name, ready, note: ready ? "" : "REPLICATE_API_TOKEN is missing in .env" };
@@ -57,6 +63,7 @@ async function replicateRun(model, input) {
 }
 
 const replicate = {
+  usesReference: true,
   reference: (prompt, aspect) =>
     replicateRun(BASE_MODEL(), { prompt, aspect_ratio: aspect, output_format: "jpg" }),
   scene: (prompt, ref, aspect) =>
@@ -94,7 +101,33 @@ function placeholder(label, text, aspect) {
   return { bytes: Buffer.from(svg), ext: "svg" };
 }
 
+// Free, keyless. Limits: one image per 45 s per IP, 768x768 total area, small logo.
+const POLLINATIONS_SIZE = { "4:5": [680, 850], "1:1": [768, 768], "9:16": [576, 1024], "16:9": [1024, 576] };
+
+async function pollinationsImage(prompt, aspect, seed) {
+  const [width, height] = POLLINATIONS_SIZE[aspect];
+  const url =
+    `https://image.pollinations.ai/prompt/${encodeURIComponent(prompt)}` +
+    `?width=${width}&height=${height}&seed=${seed}&safe=true`;
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, { signal: AbortSignal.timeout(180_000) });
+    if (res.ok) return { bytes: Buffer.from(await res.arrayBuffer()), ext: "jpg" };
+    if (res.status !== 402 && res.status !== 429) throw new ProviderError(`Pollinations error ${res.status}`);
+    // Over the free rate limit: wait it out once, otherwise tell the user how long.
+    const wait = Number(res.headers.get("retry-after")) || 45;
+    if (attempt > 1 || wait > 60) throw new ProviderError(`Free limit reached. Try again in about ${wait} seconds.`);
+    await new Promise((r) => setTimeout(r, (wait + 1) * 1000));
+  }
+}
+
+const pollinations = {
+  usesReference: false,
+  reference: (prompt, aspect, seed) => pollinationsImage(prompt, aspect, seed),
+  scene: (prompt, _ref, aspect, seed) => pollinationsImage(prompt, aspect, seed),
+};
+
 const mock = {
+  usesReference: true,
   reference: async (prompt, aspect) => placeholder("MOCK REFERENCE", prompt, aspect),
   scene: async (prompt, _ref, aspect) => placeholder("MOCK PHOTO", prompt, aspect),
 };
@@ -102,5 +135,5 @@ const mock = {
 export function provider() {
   const status = providerStatus();
   if (!status.ready) throw new ProviderError(status.note);
-  return status.name === "replicate" ? replicate : mock;
+  return { replicate, pollinations, mock }[status.name];
 }
